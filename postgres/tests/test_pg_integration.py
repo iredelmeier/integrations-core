@@ -105,29 +105,26 @@ def test_snapshot_xmin(aggregator, integration_check, pg_instance):
 
 @requires_over_13
 def test_snapshot_xip(aggregator, integration_check, pg_instance):
-    with psycopg2.connect(host=HOST, dbname=DB_NAME, user="postgres", password="datad0g") as conn:
-        with conn.cursor() as cur:
-            cur.execute('select pg_snapshot_xmin(pg_current_snapshot());')
-            xmin = float(cur.fetchall()[0][0])
+    conn1 = _get_conn()
+    cur = conn1.cursor()
+
+    # Start a transaction
+    cur.execute('BEGIN;')
+    # Force assignement of a txid and keep the transaction opened
+    cur.execute('select txid_current();')
+    # Make sure to fetch the result to make sure we start the timer after the transaction started
+    cur.fetchall()
+
+    conn2 = _get_conn()
+    conn2.set_session(autocommit=True)
+    with conn2.cursor() as cur2:
+        # Force increases of txid
+        cur2.execute('select txid_current();')
+
+    check = integration_check(pg_instance)
+    check.check(pg_instance)
     expected_tags = pg_instance['tags'] + ['port:{}'.format(PORT)]
-
-    check = integration_check(pg_instance)
-    check.check(pg_instance)
-    aggregator.assert_metric('postgresql.snapshot.xmin', value=xmin, count=1, tags=expected_tags)
-    aggregator.assert_metric('postgresql.snapshot.xmax', value=xmin, count=1, tags=expected_tags)
-
-    with psycopg2.connect(host=HOST, dbname=DB_NAME, user="postgres", password="datad0g") as conn:
-        # Force autocommit
-        conn.set_session(autocommit=True)
-        with conn.cursor() as cur:
-            # Force increases of txid
-            cur.execute('select txid_current();')
-            cur.execute('select txid_current();')
-
-    check = integration_check(pg_instance)
-    check.check(pg_instance)
-    aggregator.assert_metric('postgresql.snapshot.xmin', value=xmin + 2, count=1, tags=expected_tags)
-    aggregator.assert_metric('postgresql.snapshot.xmax', value=xmin + 2, count=1, tags=expected_tags)
+    aggregator.assert_metric('postgresql.snapshot.xip_count', value=1, count=1, tags=expected_tags)
 
 
 def test_common_metrics_without_size(aggregator, integration_check, pg_instance):
