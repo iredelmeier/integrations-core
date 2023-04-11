@@ -331,18 +331,36 @@ SELECT name, {metrics_columns}
 }
 
 TX_METRICS = {
-    'name': 'pg_snapshot_xmin',
-    'query': "select pg_snapshot_xmin(pg_current_snapshot())",
+    'name': 'pg_snapshot',
+    'query': """
+WITH snap AS (
+    SELECT * from pg_current_snapshot()
+), xip_count AS (
+    SELECT COUNT(xip_list) FROM LATERAL (SELECT pg_snapshot_xip(pg_current_snapshot) FROM snap) as xip_list
+)
+select pg_snapshot_xmin(pg_current_snapshot), pg_snapshot_xmax(pg_current_snapshot), count from snap, xip_count;
+""",
     'columns': [
-        {'name': 'postgresql.transactions.xid', 'type': 'gauge'},
+        {'name': 'postgresql.snapshot.xmin', 'type': 'gauge'},
+        {'name': 'postgresql.snapshot.xmax', 'type': 'gauge'},
+        {'name': 'postgresql.snapshot.xip_count', 'type': 'gauge'},
     ],
 }
 
 TX_METRICS_LT_13 = {
-    'name': 'pg_snapshot_xmin',
-    'query': "select txid_snapshot_xmin(txid_current_snapshot())",
+    'name': 'pg_snapshot_lt_13',
+    'query': """
+WITH snap AS (
+    SELECT * from txid_current_snapshot()
+), xip_count AS (
+    SELECT COUNT(xip_list) FROM LATERAL (SELECT txid_snapshot_xip(txid_current_snapshot) FROM snap) as xip_list
+)
+select txid_snapshot_xmin(txid_current_snapshot), txid_snapshot_xmax(txid_current_snapshot), count from snap, xip_count;
+""",
     'columns': [
-        {'name': 'postgresql.transactions.xid', 'type': 'gauge'},
+        {'name': 'postgresql.snapshot.xmin', 'type': 'gauge'},
+        {'name': 'postgresql.snapshot.xmax', 'type': 'gauge'},
+        {'name': 'postgresql.snapshot.xip_count', 'type': 'gauge'},
     ],
 }
 

@@ -77,17 +77,17 @@ def test_common_metrics(aggregator, integration_check, pg_instance):
 
 
 @requires_over_13
-def test_tx_xmin(aggregator, integration_check, pg_instance):
+def test_snapshot_xmin(aggregator, integration_check, pg_instance):
     with psycopg2.connect(host=HOST, dbname=DB_NAME, user="postgres", password="datad0g") as conn:
         with conn.cursor() as cur:
             cur.execute('select pg_snapshot_xmin(pg_current_snapshot());')
-            xid = float(cur.fetchall()[0][0])
-
+            xmin = float(cur.fetchall()[0][0])
     expected_tags = pg_instance['tags'] + ['port:{}'.format(PORT)]
 
     check = integration_check(pg_instance)
     check.check(pg_instance)
-    aggregator.assert_metric('postgresql.transactions.xid', value=xid, count=1, tags=expected_tags)
+    aggregator.assert_metric('postgresql.snapshot.xmin', value=xmin, count=1, tags=expected_tags)
+    aggregator.assert_metric('postgresql.snapshot.xmax', value=xmin, count=1, tags=expected_tags)
 
     with psycopg2.connect(host=HOST, dbname=DB_NAME, user="postgres", password="datad0g") as conn:
         # Force autocommit
@@ -99,7 +99,35 @@ def test_tx_xmin(aggregator, integration_check, pg_instance):
 
     check = integration_check(pg_instance)
     check.check(pg_instance)
-    aggregator.assert_metric('postgresql.transactions.xid', value=xid + 2, count=1, tags=expected_tags)
+    aggregator.assert_metric('postgresql.snapshot.xmin', value=xmin + 2, count=1, tags=expected_tags)
+    aggregator.assert_metric('postgresql.snapshot.xmax', value=xmin + 2, count=1, tags=expected_tags)
+
+
+@requires_over_13
+def test_snapshot_xip(aggregator, integration_check, pg_instance):
+    with psycopg2.connect(host=HOST, dbname=DB_NAME, user="postgres", password="datad0g") as conn:
+        with conn.cursor() as cur:
+            cur.execute('select pg_snapshot_xmin(pg_current_snapshot());')
+            xmin = float(cur.fetchall()[0][0])
+    expected_tags = pg_instance['tags'] + ['port:{}'.format(PORT)]
+
+    check = integration_check(pg_instance)
+    check.check(pg_instance)
+    aggregator.assert_metric('postgresql.snapshot.xmin', value=xmin, count=1, tags=expected_tags)
+    aggregator.assert_metric('postgresql.snapshot.xmax', value=xmin, count=1, tags=expected_tags)
+
+    with psycopg2.connect(host=HOST, dbname=DB_NAME, user="postgres", password="datad0g") as conn:
+        # Force autocommit
+        conn.set_session(autocommit=True)
+        with conn.cursor() as cur:
+            # Force increases of txid
+            cur.execute('select txid_current();')
+            cur.execute('select txid_current();')
+
+    check = integration_check(pg_instance)
+    check.check(pg_instance)
+    aggregator.assert_metric('postgresql.snapshot.xmin', value=xmin + 2, count=1, tags=expected_tags)
+    aggregator.assert_metric('postgresql.snapshot.xmax', value=xmin + 2, count=1, tags=expected_tags)
 
 
 def test_common_metrics_without_size(aggregator, integration_check, pg_instance):
