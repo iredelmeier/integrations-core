@@ -31,7 +31,6 @@ from .util import (
     DatabaseConfigurationError,  # noqa: F401
     TX_METRICS,
     TX_METRICS_LT_13,
-    DatabaseConfigurationError,
     fmt,
     get_schema_field,
 )
