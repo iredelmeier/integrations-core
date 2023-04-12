@@ -222,7 +222,7 @@ class PostgresStatementMetrics(DBMAsyncJob):
                 self._check.warning(
                     warning_with_tags(
                         "Unable to collect statement metrics because required fields are unavailable: %s.",
-                        ', '.join(sorted(list(missing_columns))),
+                        ', '.join(sorted(missing_columns)),
                         host=self._check.resolved_hostname,
                         dbname=self._config.dbname,
                     ),
@@ -270,7 +270,7 @@ class PostgresStatementMetrics(DBMAsyncJob):
                     ),
                 )
 
-            query_columns = sorted(list(available_columns & desired_columns))
+            query_columns = sorted(available_columns & desired_columns)
             params = ()
             filters = ""
             if self._config.dbstrict:
