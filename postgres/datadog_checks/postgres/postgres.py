@@ -28,9 +28,9 @@ from .util import (
     QUERY_PG_STAT_WAL_RECEIVER,
     REPLICATION_METRICS,
     SLRU_METRICS,
-    DatabaseConfigurationError,  # noqa: F401
     TX_METRICS,
     TX_METRICS_LT_13,
+    DatabaseConfigurationError,  # noqa: F401
     fmt,
     get_schema_field,
 )
