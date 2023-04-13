@@ -123,7 +123,7 @@
     `promhttp_metric_handler_requests`. This submits to Datadog the metric name appended with `.count`.
     For more information, see:
     https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#suffixes
-    
+
     Regular expressions may be used to match the exposed metric names, for example:
 
       extra_metrics:
@@ -182,7 +182,6 @@
           type: string
 - name: tag_by_endpoint
   description: Whether to include an endpoint tag or not.
-  hidden: true
   value:
     type: boolean
     example: False
@@ -194,6 +193,7 @@
     Labels defined in `exclude_labels` will take precedence in case of overlap.
 
     Note: Label filtering happens before `rename_labels`.
+    Note: Use `tag_by_endpoint` to exclude the `endpoint` label.
   value:
     type: array
     items:
@@ -356,6 +356,8 @@
 - name: ignore_tags
   description: |
     A list of regular expressions used to ignore tags added by Autodiscovery and entries in the `tags` option.
+
+    Note: Use `tag_by_endpoint` to exclude the `endpoint` label.
   value:
     type: array
     items:
