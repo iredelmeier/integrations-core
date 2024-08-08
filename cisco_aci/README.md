@@ -78,6 +78,10 @@ For containerized environments, see the [Autodiscovery Integration Templates][5]
 
 [Run the Agent's `status` subcommand][6] and look for `cisco_aci` under the Checks section.
 
+## Vendor profiles
+
+Specific supported vendor profiles for this integration can be found on the [network vendors][10] page.
+
 ## Data Collected
 
 ### Metrics
@@ -121,7 +125,7 @@ Because this check queries all the tenants, apps, and endpoints listed before re
 
 Need help? Contact [Datadog support][9].
 
-[1]: https://app.datadoghq.com/account/settings#agent
+[1]: https://app.datadoghq.com/account/settings/agent/latest
 [2]: https://docs.datadoghq.com/agent/guide/agent-configuration-files/#agent-configuration-directory
 [3]: https://github.com/DataDog/integrations-core/blob/master/cisco_aci/datadog_checks/cisco_aci/data/conf.yaml.example
 [4]: https://docs.datadoghq.com/agent/guide/agent-commands/#start-stop-and-restart-the-agent
@@ -130,3 +134,4 @@ Need help? Contact [Datadog support][9].
 [7]: https://github.com/DataDog/integrations-core/blob/master/cisco_aci/metadata.csv
 [8]: https://github.com/DataDog/integrations-core/blob/master/cisco_aci/assets/service_checks.json
 [9]: https://docs.datadoghq.com/help/
+[10]: https://docs.datadoghq.com/network_monitoring/devices/#vendor-profiles

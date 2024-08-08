@@ -13,7 +13,6 @@ from six import PY3
 
 from datadog_checks.base import AgentCheck, to_native_string
 from datadog_checks.base import __version__ as base_package_version
-from datadog_checks.base.checks.base import datadog_agent
 from datadog_checks.dev.testing import requires_py3
 
 
@@ -542,6 +541,111 @@ class TestServiceChecks:
         aggregator.assert_service_check('service_check', status=AgentCheck.OK)
 
 
+class TestLogSubmission:
+    def test_cursor(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{}])
+        check.check_id = 'test'
+
+        check.send_log({'message': 'foo'}, cursor={'data': '1'})
+        check.send_log({'message': 'bar'}, cursor={'data': '2'})
+        check.send_log({'message': 'baz'})
+
+        datadog_agent.assert_logs(
+            check.check_id,
+            [
+                {'message': 'foo'},
+                {'message': 'bar'},
+                {'message': 'baz'},
+            ],
+        )
+        assert check.get_log_cursor() == {'data': '2'}
+
+    def test_no_cursor(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{}])
+        check.check_id = 'test'
+
+        check.send_log({'message': 'foo'})
+        check.send_log({'message': 'bar'})
+        check.send_log({'message': 'baz'})
+
+        datadog_agent.assert_logs(
+            check.check_id,
+            [
+                {'message': 'foo'},
+                {'message': 'bar'},
+                {'message': 'baz'},
+            ],
+        )
+        assert check.get_log_cursor() is None
+
+    def test_tags(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{'tags': ['foo:bar', 'baz:qux']}])
+        check.check_id = 'test'
+
+        check.send_log({'message': 'foo'})
+        check.send_log({'message': 'bar', 'ddtags': 'bar:baz'})
+        check.send_log({'message': 'baz'})
+
+        datadog_agent.assert_logs(
+            check.check_id,
+            [
+                {'message': 'foo', 'ddtags': 'baz:qux,foo:bar'},
+                {'message': 'bar', 'ddtags': 'bar:baz'},
+                {'message': 'baz', 'ddtags': 'baz:qux,foo:bar'},
+            ],
+        )
+
+    def test_stream(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{}])
+        check.check_id = 'test'
+
+        check.send_log({'message': 'foo'}, cursor={'data': '1'}, stream='stream1')
+        check.send_log({'message': 'bar'}, cursor={'data': '2'}, stream='stream2')
+        check.send_log({'message': 'baz'})
+
+        datadog_agent.assert_logs(
+            check.check_id,
+            [
+                {'message': 'foo'},
+                {'message': 'bar'},
+                {'message': 'baz'},
+            ],
+        )
+        assert check.get_log_cursor(stream='stream1') == {'data': '1'}
+        assert check.get_log_cursor(stream='stream2') == {'data': '2'}
+
+    def test_timestamp(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{}])
+        check.check_id = 'test'
+
+        check.send_log({'message': 'foo', 'timestamp': 1722958617.2842212})
+        check.send_log({'message': 'bar', 'timestamp': 1722958619.2358432})
+        check.send_log({'message': 'baz', 'timestamp': 1722958620.5963688})
+
+        datadog_agent.assert_logs(
+            check.check_id,
+            [
+                {'message': 'foo', 'timestamp': 1722958617284},
+                {'message': 'bar', 'timestamp': 1722958619235},
+                {'message': 'baz', 'timestamp': 1722958620596},
+            ],
+        )
+        assert check.get_log_cursor() is None
+
+
+class TestLogsEnabledDetection:
+    def test_default(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{}])
+
+        assert check.logs_enabled is False
+
+    def test_enabled(self, datadog_agent):
+        check = AgentCheck('check_name', {}, [{}])
+        datadog_agent._config['logs_enabled'] = True
+
+        assert check.logs_enabled is True
+
+
 class TestTags:
     def test_default_string(self):
         check = AgentCheck()
@@ -623,15 +727,17 @@ class TestTags:
             check.set_external_tags(external_host_tags)
             assert external_host_tags == [('hostname', {'src_name': ['normalize:tag']})]
 
-    def test_external_hostname(self):
+    def test_external_hostname(self, datadog_agent):
         check = AgentCheck()
         external_host_tags = [(u'hostnam\xe9', {'src_name': ['key1:val1']})]
-        with mock.patch.object(datadog_agent, 'set_external_tags') as set_external_tags:
-            check.set_external_tags(external_host_tags)
-            if PY3:
-                set_external_tags.assert_called_with([(u'hostnam\xe9', {'src_name': ['key1:val1']})])
-            else:
-                set_external_tags.assert_called_with([('hostnam\xc3\xa9', {'src_name': ['key1:val1']})])
+        check.set_external_tags(external_host_tags)
+
+        if PY3:
+            datadog_agent.assert_external_tags(u'hostnam\xe9', {'src_name': ['key1:val1']})
+        else:
+            datadog_agent.assert_external_tags('hostnam\xc3\xa9', {'src_name': ['key1:val1']})
+
+        datadog_agent.assert_external_tags_count(1)
 
     @pytest.mark.parametrize(
         "disable_generic_tags, expected_tags",
@@ -976,20 +1082,19 @@ def test_load_configuration_models(dd_run_check, mocker):
     instance_config = {}
     shared_config = {}
     package = mocker.MagicMock()
-    package.InstanceConfig = mocker.MagicMock(return_value=instance_config)
-    package.SharedConfig = mocker.MagicMock(return_value=shared_config)
+    package.InstanceConfig.model_validate = mocker.MagicMock(return_value=instance_config)
+    package.SharedConfig.model_validate = mocker.MagicMock(return_value=shared_config)
     import_module = mocker.patch('importlib.import_module', return_value=package)
 
     dd_run_check(check)
 
-    instance_data = check._get_config_model_initialization_data()
-    instance_data.update(instance)
-    init_config_data = check._get_config_model_initialization_data()
-    init_config_data.update(init_config)
-
     import_module.assert_called_with('datadog_checks.base.config_models')
-    package.InstanceConfig.assert_called_once_with(**instance_data)
-    package.SharedConfig.assert_called_once_with(**init_config_data)
+    package.InstanceConfig.model_validate.assert_called_once_with(
+        instance, context=check._get_config_model_context(instance)
+    )
+    package.SharedConfig.model_validate.assert_called_once_with(
+        init_config, context=check._get_config_model_context(init_config)
+    )
 
     assert check._config_model_instance is instance_config
     assert check._config_model_shared is shared_config
@@ -997,11 +1102,7 @@ def test_load_configuration_models(dd_run_check, mocker):
 
 if PY3:
 
-    from pydantic import BaseModel, Field
-
-    class BaseModelTest(BaseModel):
-        field = ""
-        schema_ = Field("", alias='schema')
+    from .utils import BaseModelTest
 
 else:
 

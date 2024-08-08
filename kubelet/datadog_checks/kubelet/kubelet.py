@@ -3,7 +3,6 @@
 # Licensed under Simplified BSD License (see LICENSE)
 from __future__ import division
 
-import logging
 import re
 import sys
 from collections import defaultdict
@@ -16,14 +15,22 @@ from six.moves.urllib.parse import urlparse
 
 from datadog_checks.base import AgentCheck, OpenMetricsBaseCheck
 from datadog_checks.base.checks.kubelet_base.base import KubeletBase, KubeletCredentials, urljoin
-from datadog_checks.base.errors import CheckException
+from datadog_checks.base.config import _is_affirmative
+from datadog_checks.base.errors import CheckException, SkipInstanceError
 from datadog_checks.base.utils.tagging import tagger
+
+try:
+    import datadog_agent
+except ImportError:
+    from datadog_checks.base.stubs import datadog_agent
+
 
 from .cadvisor import CadvisorScraper
 from .common import (
     CADVISOR_DEFAULT_PORT,
     PodListUtils,
     get_container_label,
+    get_prometheus_url,
     replace_container_rt_prefix,
     tags_for_docker,
 )
@@ -34,6 +41,7 @@ from .summary import SummaryScraperMixin
 KUBELET_HEALTH_PATH = '/healthz'
 NODE_SPEC_PATH = '/spec'
 POD_LIST_PATH = '/pods'
+CADVISOR_METRICS_PATH = '/metrics/cadvisor'
 KUBELET_METRICS_PATH = '/metrics'
 STATS_PATH = '/stats/summary/'
 PROBES_METRICS_PATH = '/metrics/probes'
@@ -67,6 +75,7 @@ WHITELISTED_CONTAINER_STATE_REASONS = {
         'containercreating',
         'createcontainererror',
         'invalidimagename',
+        'createcontainerconfigerror',
     ],
     'terminated': ['oomkilled', 'containercannotrun', 'error'],
 }
@@ -129,8 +138,6 @@ DEFAULT_ENABLED_GAUGES = [
 ]
 DEFAULT_POD_LEVEL_METRICS = ['network.*']
 
-log = logging.getLogger('collector')
-
 
 class KubeletCheck(
     CadvisorPrometheusScraperMixin,
@@ -163,6 +170,10 @@ class KubeletCheck(
     VOLUME_TAG_KEYS_TO_EXCLUDE = ['persistentvolumeclaim', 'pod_phase']
 
     def __init__(self, name, init_config, instances):
+        if _is_affirmative(datadog_agent.get_config("kubelet_core_check_enabled")):
+            raise SkipInstanceError(
+                "The kubelet core check is enabled, skipping initialization of the python kubelet check"
+            )
         self.KUBELET_METRIC_TRANSFORMERS = {
             'kubelet_container_log_filesystem_used_bytes': self.kubelet_container_log_filesystem_used_bytes,
             'rest_client_request_latency_seconds': self.rest_client_latency,
@@ -174,14 +185,6 @@ class KubeletCheck(
             raise Exception('Kubelet check only supports one configured instance.')
         inst = instances[0] if instances else None
 
-        cadvisor_instance = self._create_cadvisor_prometheus_instance(inst)
-
-        if len(inst.get('ignore_metrics', {})) > 0:
-            # Add entries from configuration to ignore_metrics in the cadvisor collector.
-            cadvisor_instance['ignore_metrics'].extend(
-                m for m in inst.get('ignore_metrics', {}) if m not in cadvisor_instance['ignore_metrics']
-            )
-
         # configuring the collection of some of the metrics (via the cadvisor or the summary endpoint)
         self.max_depth = inst.get('max_depth', DEFAULT_MAX_DEPTH)
         enabled_gauges = inst.get('enabled_gauges', DEFAULT_ENABLED_GAUGES)
@@ -191,10 +194,25 @@ class KubeletCheck(
         pod_level_metrics = inst.get('pod_level_metrics', DEFAULT_POD_LEVEL_METRICS)
         self.pod_level_metrics = ["{0}.{1}".format(self.NAMESPACE, x) for x in pod_level_metrics]
 
-        kubelet_instance = self._create_kubelet_prometheus_instance(inst)
-        probes_instance = self._create_probes_prometheus_instance(inst)
+        # configuring the different instances use to scrape the 3 kubelet endpoints
+        prom_url, get_prom_url_err = get_prometheus_url("dummy_url/cadvisor")
+
+        cadvisor_instance = self._create_cadvisor_prometheus_instance(inst, prom_url)
+        if len(inst.get('ignore_metrics', {})) > 0:
+            # Add entries from configuration to ignore_metrics in the cadvisor collector.
+            cadvisor_instance['ignore_metrics'].extend(
+                m for m in inst.get('ignore_metrics', {}) if m not in cadvisor_instance['ignore_metrics']
+            )
+
+        kubelet_instance = self._create_kubelet_prometheus_instance(inst, prom_url)
+        probes_instance = self._create_probes_prometheus_instance(inst, prom_url)
         generic_instances = [cadvisor_instance, kubelet_instance, probes_instance]
+
         super(KubeletCheck, self).__init__(name, init_config, generic_instances)
+
+        # we need to wait that `super()` was executed to have the self.log instance created
+        if get_prom_url_err:
+            self.log.warning('get_prometheus_url() failed to query the kublet, err: %s', get_prom_url_err)
 
         self.cadvisor_legacy_port = inst.get('cadvisor_port', CADVISOR_DEFAULT_PORT)
         self.cadvisor_legacy_url = None
@@ -232,19 +250,16 @@ class KubeletCheck(
 
         self.first_run = True
 
-    def _create_kubelet_prometheus_instance(self, instance):
+    def _create_kubelet_prometheus_instance(self, instance, prom_url):
         """
         Create a copy of the instance and set default values.
         This is so the base class can create a scraper_config with the proper values.
         """
-        kubelet_conn_info = get_connection_info()
-        endpoint = kubelet_conn_info.get('url')
-
         kubelet_instance = deepcopy(instance)
         kubelet_instance.update(
             {
                 'namespace': self.NAMESPACE,
-                'prometheus_url': instance.get('kubelet_metrics_endpoint', urljoin(endpoint, KUBELET_METRICS_PATH)),
+                'prometheus_url': instance.get('kubelet_metrics_endpoint', urljoin(prom_url, KUBELET_METRICS_PATH)),
                 'metrics': [
                     DEFAULT_GAUGES,
                     DEPRECATED_GAUGES,
@@ -329,6 +344,8 @@ class KubeletCheck(
         endpoint = kubelet_conn_info.get('url')
         if endpoint is None:
             raise CheckException("Unable to detect the kubelet URL automatically: " + kubelet_conn_info.get('err', ''))
+
+        self._update_kubelet_url_and_bearer_token(instance, endpoint)
 
         self.kube_health_url = urljoin(endpoint, KUBELET_HEALTH_PATH)
         self.node_spec_url = urljoin(endpoint, NODE_SPEC_PATH)
@@ -485,22 +502,23 @@ class KubeletCheck(
         containers_tag_counter = defaultdict(int)
         for pod in pods.get('items', []):
             # Containers reporting
-            containers = pod.get('status', {}).get('containerStatuses', [])
             has_container_running = False
-            for container in containers:
-                container_id = container.get('containerID')
-                if not container_id:
-                    self.log.debug('skipping container with no id')
-                    continue
-                if "running" not in container.get('state', {}):
-                    continue
-                has_container_running = True
-                tags = tagger.tag(replace_container_rt_prefix(container_id), tagger.LOW) or None
-                if not tags:
-                    continue
-                tags += instance_tags
-                hash_tags = tuple(sorted(tags))
-                containers_tag_counter[hash_tags] += 1
+            for field in ['containerStatuses', 'initContainerStatuses']:
+                containers = pod.get('status', {}).get(field, [])
+                for container in containers:
+                    container_id = container.get('containerID')
+                    if not container_id:
+                        self.log.debug('skipping container with no id')
+                        continue
+                    if "running" not in container.get('state', {}):
+                        continue
+                    has_container_running = True
+                    tags = tagger.tag(replace_container_rt_prefix(container_id), tagger.LOW) or None
+                    if not tags:
+                        continue
+                    tags += instance_tags
+                    hash_tags = tuple(sorted(tags))
+                    containers_tag_counter[hash_tags] += 1
             # Pod reporting
             if not has_container_running:
                 continue
@@ -527,42 +545,51 @@ class KubeletCheck(
             if self._should_ignore_pod(pod_name, pod_phase):
                 continue
 
-            for ctr in pod['spec']['containers']:
-                if not ctr.get('resources'):
-                    continue
+            for status_field, spec_field in [
+                ('containerStatuses', 'containers'),
+                ('initContainerStatuses', 'initContainers'),
+            ]:
+                for ctr in pod.get('spec', {}).get(spec_field, []):
+                    if not ctr.get('resources'):
+                        continue
 
-                c_name = ctr.get('name', '')
-                cid = None
-                for ctr_status in pod['status'].get('containerStatuses', []):
-                    if ctr_status.get('name') == c_name:
-                        # it is already prefixed with 'runtime://'
-                        cid = ctr_status.get('containerID')
-                        break
-                if not cid:
-                    continue
+                    c_name = ctr.get('name', '')
+                    cid = None
+                    completed = False
+                    for ctr_status in pod.get('status', {}).get(status_field, []):
+                        if ctr_status.get('name') == c_name:
+                            # we found the correct container status, but we don't want to report resources
+                            # for completed containers
+                            if ctr_status.get('state', {}).get('terminated', {}).get('reason', '') == 'Completed':
+                                completed = True
+                            # it is already prefixed with 'runtime://'
+                            cid = ctr_status.get('containerID')
+                            break
+                    if not cid or completed:
+                        continue
 
-                pod_uid = pod.get('metadata', {}).get('uid')
-                if self.pod_list_utils.is_excluded(cid, pod_uid):
-                    continue
+                    pod_uid = pod.get('metadata', {}).get('uid')
+                    if self.pod_list_utils.is_excluded(cid, pod_uid):
+                        continue
 
-                tags = tagger.tag(replace_container_rt_prefix(cid), tagger.HIGH)
-                if not tags:
-                    continue
-                tags += instance_tags
+                    tags = tagger.tag(replace_container_rt_prefix(cid), tagger.HIGH)
+                    if not tags:
+                        continue
+                    tags += instance_tags
 
-                try:
-                    for resource, value_str in iteritems(ctr.get('resources', {}).get('requests', {})):
-                        value = self.parse_quantity(value_str)
-                        self.gauge('{}.{}.requests'.format(self.NAMESPACE, resource), value, tags)
-                except (KeyError, AttributeError) as e:
-                    self.log.debug("Unable to retrieve container requests for %s: %s", c_name, e)
+                    try:
+                        for resource, value_str in iteritems(ctr.get('resources', {}).get('requests', {})):
+                            value = self.parse_quantity(value_str)
+                            self.gauge('{}.{}.requests'.format(self.NAMESPACE, resource), value, tags)
+                    except (KeyError, AttributeError) as e:
+                        self.log.debug("Unable to retrieve container requests for %s: %s", c_name, e)
 
-                try:
-                    for resource, value_str in iteritems(ctr.get('resources', {}).get('limits', {})):
-                        value = self.parse_quantity(value_str)
-                        self.gauge('{}.{}.limits'.format(self.NAMESPACE, resource), value, tags)
-                except (KeyError, AttributeError) as e:
-                    self.log.debug("Unable to retrieve container limits for %s: %s", c_name, e)
+                    try:
+                        for resource, value_str in iteritems(ctr.get('resources', {}).get('limits', {})):
+                            value = self.parse_quantity(value_str)
+                            self.gauge('{}.{}.limits'.format(self.NAMESPACE, resource), value, tags)
+                    except (KeyError, AttributeError) as e:
+                        self.log.debug("Unable to retrieve container limits for %s: %s", c_name, e)
 
     def _report_container_state_metrics(self, pod_list, instance_tags):
         """Reports container state & reasons by looking at container statuses"""
@@ -576,30 +603,31 @@ class KubeletCheck(
             if not pod_name or not pod_uid:
                 continue
 
-            for ctr_status in pod['status'].get('containerStatuses', []):
-                c_name = ctr_status.get('name')
-                cid = ctr_status.get('containerID')
+            for field in ['containerStatuses', 'initContainerStatuses']:
+                for ctr_status in pod.get('status', {}).get(field, []):
+                    c_name = ctr_status.get('name')
+                    cid = ctr_status.get('containerID')
 
-                if not c_name or not cid:
-                    continue
+                    if not c_name or not cid:
+                        continue
 
-                if self.pod_list_utils.is_excluded(cid, pod_uid):
-                    continue
+                    if self.pod_list_utils.is_excluded(cid, pod_uid):
+                        continue
 
-                tags = tagger.tag(replace_container_rt_prefix(cid), tagger.ORCHESTRATOR)
-                if not tags:
-                    continue
-                tags += instance_tags
+                    tags = tagger.tag(replace_container_rt_prefix(cid), tagger.ORCHESTRATOR)
+                    if not tags:
+                        continue
+                    tags += instance_tags
 
-                restart_count = ctr_status.get('restartCount', 0)
-                self.gauge(self.NAMESPACE + '.containers.restarts', restart_count, tags)
+                    restart_count = ctr_status.get('restartCount', 0)
+                    self.gauge(self.NAMESPACE + '.containers.restarts', restart_count, tags)
 
-                for (metric_name, field_name) in [('state', 'state'), ('last_state', 'lastState')]:
-                    c_state = ctr_status.get(field_name, {})
+                    for metric_name, field_name in [('state', 'state'), ('last_state', 'lastState')]:
+                        c_state = ctr_status.get(field_name, {})
 
-                    for state_name in ['terminated', 'waiting']:
-                        state_reasons = WHITELISTED_CONTAINER_STATE_REASONS.get(state_name, [])
-                        self._submit_container_state_metric(metric_name, state_name, c_state, state_reasons, tags)
+                        for state_name in ['terminated', 'waiting']:
+                            state_reasons = WHITELISTED_CONTAINER_STATE_REASONS.get(state_name, [])
+                            self._submit_container_state_metric(metric_name, state_name, c_state, state_reasons, tags)
 
     def _submit_container_state_metric(self, metric_name, state_name, c_state, state_reasons, tags):
         reason_tags = []
@@ -616,6 +644,23 @@ class KubeletCheck(
             gauge_name = '{}.containers.{}.{}'.format(self.NAMESPACE, metric_name, state_name)
             self.gauge(gauge_name, 1, tags + reason_tags)
 
+    def _update_kubelet_url_and_bearer_token(self, instance, endpoint):
+        if 'cadvisor_metrics_endpoint' in instance:
+            cadvisor_metrics_endpoint = instance.get(
+                'cadvisor_metrics_endpoint', urljoin(endpoint, CADVISOR_METRICS_PATH)
+            )
+        else:
+            cadvisor_metrics_endpoint = instance.get('metrics_endpoint', urljoin(endpoint, CADVISOR_METRICS_PATH))
+
+        self.update_prometheus_url(instance, self.cadvisor_scraper_config, cadvisor_metrics_endpoint)
+
+        kubelet_metrics_endpoint = instance.get('kubelet_metrics_endpoint', urljoin(endpoint, KUBELET_METRICS_PATH))
+        self.update_prometheus_url(instance, self.kubelet_scraper_config, kubelet_metrics_endpoint)
+
+        probes_metrics_endpoint = urljoin(endpoint, PROBES_METRICS_PATH)
+        instance_probes_metrics_endpoint = instance.get('probes_metrics_endpoint', probes_metrics_endpoint)
+        self.update_prometheus_url(instance, self.probes_scraper_config, instance_probes_metrics_endpoint)
+
     @staticmethod
     def parse_quantity(string):
         """
@@ -629,13 +674,22 @@ class KubeletCheck(
         :param string: str
         :return: float
         """
-        number, unit = '', ''
-        for char in string:
-            if char.isdigit() or char == '.':
-                number += char
-            else:
-                unit += char
-        return float(number) * FACTORS.get(unit, 1)
+        # If the string has an exponent, Python converts it automatically with `float`
+        # A quantity can't have both an exponent and a unit suffix
+        # Quantities must match the regular expression '^([+-]?[0-9.]+)([eEinumkKMGTP]*[-+]?[0-9]*)$'
+        # Ref: https://github.com/kubernetes/apimachinery/blob/d82afe1e363acae0e8c0953b1bc230d65fdb50e2/pkg/api/resource/quantity.go#L144-L148
+        try:
+            converted_value = float(string)
+            return converted_value
+        # The string can't directly be handled by `float` : it has a suffix to parse
+        except ValueError:
+            number, unit = '', ''
+            for char in string:
+                if char.isdigit() or char == '.':
+                    number += char
+                else:
+                    unit += char
+            return float(number) * FACTORS.get(unit, 1)
 
     @staticmethod
     def _should_ignore_pod(name, phase):

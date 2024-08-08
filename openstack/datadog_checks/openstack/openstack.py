@@ -144,7 +144,7 @@ class OpenStackScope(object):
         auth_url = urljoin(keystone_server_url, "{0}/auth/tokens".format(DEFAULT_KEYSTONE_API_VERSION))
         headers = {'Content-Type': 'application/json'}
 
-        resp = requests.post(
+        resp = requests.post(  # SKIP_HTTP_VALIDATION
             auth_url,
             headers=headers,
             data=json.dumps(payload),
@@ -688,7 +688,7 @@ class OpenStackCheck(AgentCheck):
             network_ids = [
                 network_id
                 for network_id in all_network_ids
-                if not any([re.match(exclude_id, network_id) for exclude_id in self.exclude_network_id_rules])
+                if not any(re.match(exclude_id, network_id) for exclude_id in self.exclude_network_id_rules)
             ]
         else:
             network_ids = self.init_config.get('network_ids', [])

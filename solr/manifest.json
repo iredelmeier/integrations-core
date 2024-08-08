@@ -13,11 +13,12 @@
     "media": [],
     "classifier_tags": [
       "Category::Caching",
-      "Category::Data Store",
+      "Category::Data Stores",
       "Category::Log Collection",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -26,7 +27,6 @@
     "homepage": "https://www.datadoghq.com",
     "sales_email": "info@datadoghq.com"
   },
-  "oauth": {},
   "assets": {
     "integration": {
       "source_type_name": "Solr",
@@ -46,16 +46,15 @@
       },
       "process_signatures": [
         "solr start"
-      ]
+      ],
+      "source_type_id": 42,
+      "auto_install": true
     },
     "dashboards": {
       "solr": "assets/dashboards/solr_dashboard.json"
     },
     "saved_views": {
       "solr_processes": "assets/saved_views/solr_processes.json"
-    },
-    "logs": {
-      "source": "solr"
     }
   }
 }

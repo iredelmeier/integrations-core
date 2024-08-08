@@ -16,7 +16,8 @@
       "Category::Log Collection",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -25,7 +26,6 @@
     "homepage": "https://www.datadoghq.com",
     "sales_email": "info@datadoghq.com"
   },
-  "oauth": {},
   "assets": {
     "integration": {
       "source_type_name": "Traffic Server",
@@ -48,7 +48,9 @@
         "traffic_manager",
         "traffic_server",
         "trafficserver start"
-      ]
+      ],
+      "source_type_id": 10259,
+      "auto_install": true
     },
     "dashboards": {
       "Traffic Server - Overview": "assets/dashboards/overview.json"
@@ -61,9 +63,6 @@
       "traffic_server_error_logs": "assets/saved_views/traffic_server_error_logs.json",
       "traffic_server_overview": "assets/saved_views/traffic_server_overview.json",
       "traffic_server_patterns": "assets/saved_views/traffic_server_error_patterns.json"
-    },
-    "logs": {
-      "source": "traffic_server"
     }
   }
 }

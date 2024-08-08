@@ -3,8 +3,11 @@
 # Licensed under a 3-clause BSD style license (see LICENSE)
 import os
 import re
+import sys
+from typing import Dict
 
 from datadog_checks.base.utils.platform import Platform
+from datadog_checks.sqlserver.const import ENGINE_EDITION_AZURE_MANAGED_INSTANCE, ENGINE_EDITION_SQL_DATABASE
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 DRIVER_CONFIG_DIR = os.path.join(CURRENT_DIR, 'data', 'driver_config')
@@ -34,9 +37,37 @@ def set_default_driver_conf():
         # Use default `./driver_config/odbcinst.ini` when Agent is running in docker.
         # `freetds` is shipped with the Docker Agent.
         os.environ.setdefault('ODBCSYSINI', DRIVER_CONFIG_DIR)
-    else:
+    elif Platform.is_linux():
+        """
+        The agent running on Linux has msodbcsql18 and FreeTDS installed.
+        The default driver is msodbcsql18.
+        To best leverage the default driver, we set the ODBCSYSINI environment variable to the directory
+        containing the pre-configured odbcinst.ini file.
+        However, if the user has already configured the ODBCSYSINI environment variable,
+        OR if the user has already created or copied the odbcinst.ini file in the unixODBC sysconfig location,
+        we do not override the ODBCSYSINI environment variable.
+        """
+        if 'ODBCSYSINI' in os.environ:
+            # If ODBCSYSINI is already set in env, don't override it
+            return
+
+        # linux_unixodbc_sysconfig is set to the agent embedded /etc directory
+        # this is a hacky way to get the path to the etc directory
+        # by getting the path to the python executable and get the directory above /bin/python
+        linux_unixodbc_sysconfig = os.path.dirname(os.path.dirname(sys.executable))
+        if os.path.exists(os.path.join(linux_unixodbc_sysconfig, 'odbcinst.ini')) or os.path.exists(
+            os.path.join(linux_unixodbc_sysconfig, 'odbc.ini')
+        ):
+            # If there are already drivers or dataSources installed, don't override the ODBCSYSINI
+            # This means user has copied odbcinst.ini and odbc.ini to the unixODBC sysconfig location
+            return
+
+        # Use default `./driver_config/odbcinst.ini` to let the integration use agent embedded odbc driver.
+        os.environ.setdefault('ODBCSYSINI', DRIVER_CONFIG_DIR)
+
         # required when using pyodbc with FreeTDS on Ubuntu 18.04
         # see https://stackoverflow.com/a/22988748/1258743
+        # TODO: remove once we deprecate the embedded FreeTDS driver
         os.environ.setdefault('TDSVER', '8.0')
 
 
@@ -46,9 +77,7 @@ def construct_use_statement(database):
 
 def is_statement_proc(text):
     if text:
-        # take first 500 chars, upper case and split into string
-        # to get individual keywords
-        t = text[0:500].upper().split()
+        t = text.upper().split()
         idx_create = _get_index_for_keyword(t, 'CREATE')
         idx_proc = _get_index_for_keyword(t, 'PROCEDURE')
         if idx_proc < 0:
@@ -74,12 +103,12 @@ def _get_index_for_keyword(text, keyword):
 
 def extract_sql_comments(text):
     if not text:
-        return []
+        return [], None
     in_single_line_comment = False
     in_multi_line_comment = False
     comment_start = None
     result = []
-
+    stripped_text = ""
     for i in range(len(text)):
         if in_multi_line_comment:
             if i < len(text) - 1 and text[i : i + 2] == '*/':
@@ -90,8 +119,7 @@ def extract_sql_comments(text):
         elif in_single_line_comment:
             if text[i] == '\n':
                 in_single_line_comment = False
-                # strip any extra whitespace at the end
-                # of the single line comment
+                # strip any extra whitespace at the end of the single line comment
                 result.append(text[comment_start:i].rstrip())
         else:
             if i < len(text) - 1 and text[i : i + 2] == '--':
@@ -100,8 +128,15 @@ def extract_sql_comments(text):
             elif i < len(text) - 1 and text[i : i + 2] == '/*':
                 in_multi_line_comment = True
                 comment_start = i
+            else:
+                stripped_text += text[i]
+    return result, stripped_text
 
-    return result
+
+def extract_sql_comments_and_procedure_name(text):
+    result, stripped_text = extract_sql_comments(text)
+    is_proc, name = is_statement_proc(stripped_text)
+    return result, is_proc, name
 
 
 def parse_sqlserver_major_version(version):
@@ -114,3 +149,48 @@ def parse_sqlserver_major_version(version):
     if not match:
         return None
     return int(match.group(1))
+
+
+def is_azure_database(engine_edition):
+    """
+    Checks if engine edition matches Azure SQL MI or Azure SQL DB
+    :param engine_edition: The engine version of the database host
+    :return: bool
+    """
+    return engine_edition == ENGINE_EDITION_AZURE_MANAGED_INSTANCE or engine_edition == ENGINE_EDITION_SQL_DATABASE
+
+
+def is_azure_sql_database(engine_edition):
+    """
+    Checks if engine edition matches Azure SQL DB
+    :param engine_edition: The engine version of the database host
+    :return: bool
+    """
+    return engine_edition == ENGINE_EDITION_SQL_DATABASE
+
+
+def execute_query(query, cursor, convert_results_to_str=False, parameter=None) -> Dict[str, str]:
+    if parameter is not None:
+        cursor.execute(query, (parameter,))
+    else:
+        cursor.execute(query)
+    columns = [str(column[0]).lower() for column in cursor.description]
+    rows = []
+    if convert_results_to_str:
+        rows = [dict(zip(columns, [str(item) for item in row])) for row in cursor.fetchall()]
+    else:
+        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    return rows
+
+
+def get_list_chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i : i + n]
+
+
+def convert_to_bool(value):
+    if isinstance(value, int):
+        return bool(value)
+    else:
+        return value

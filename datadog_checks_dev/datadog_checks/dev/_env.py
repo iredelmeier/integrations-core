@@ -19,7 +19,8 @@ E2E_PREFIX = 'DDEV_E2E'
 E2E_ENV_VAR_PREFIX = '{}_ENV_'.format(E2E_PREFIX)
 E2E_SET_UP = '{}_UP'.format(E2E_PREFIX)
 E2E_TEAR_DOWN = '{}_DOWN'.format(E2E_PREFIX)
-E2E_PARENT_PYTHON = '{}_PYTHON_PATH'.format(E2E_PREFIX)
+E2E_PARENT_PYTHON = '{}_PARENT_PYTHON'.format(E2E_PREFIX)
+E2E_RESULT_FILE = '{}_RESULT_FILE'.format(E2E_PREFIX)
 
 E2E_FIXTURE_NAME = 'dd_environment'
 TESTING_PLUGIN = 'DDEV_TESTING_PLUGIN'
@@ -130,6 +131,10 @@ def replay_check_run(agent_collector, stub_aggregator, stub_agent):
                 if data.get('source_type_name') == 'JMX':
                     raw_metric_type = JMX_TO_INAPP_TYPES.get(raw_metric_type, raw_metric_type)
                 metric_type = stub_aggregator.METRIC_ENUM_MAP[raw_metric_type]
+
+                if not data['metric']:
+                    print(data)
+
                 stub_aggregator.submit_metric_e2e(
                     # device is only present when replaying e2e tests. In integration tests it will be a tag
                     check_name,

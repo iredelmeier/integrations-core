@@ -13,11 +13,18 @@
     "media": [],
     "classifier_tags": [
       "Category::Caching",
-      "Category::Data Store",
+      "Category::Data Stores",
       "Category::Log Collection",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/monitoring-couchdb-with-datadog"
+      }
     ]
   },
   "author": {
@@ -26,7 +33,6 @@
     "homepage": "https://www.datadoghq.com",
     "sales_email": "info@datadoghq.com"
   },
-  "oauth": {},
   "assets": {
     "integration": {
       "source_type_name": "CouchDB",
@@ -49,7 +55,9 @@
       },
       "process_signatures": [
         "couchjs"
-      ]
+      ],
+      "source_type_id": 20,
+      "auto_install": true
     },
     "dashboards": {
       "couchdb": "assets/dashboards/CouchDB-overview_dashboard.json",
@@ -57,9 +65,6 @@
     },
     "saved_views": {
       "couchdb_processes": "assets/saved_views/couchdb_processes.json"
-    },
-    "logs": {
-      "source": "couchdb"
     }
   }
 }

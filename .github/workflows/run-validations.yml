@@ -7,6 +7,9 @@ on:
         required: true
         type: string
 
+      ddev-version:
+        required: false
+        type: string
       agent-reqs:
         required: false
         default: false
@@ -51,6 +54,10 @@ on:
         required: false
         default: false
         type: boolean
+      labeler:
+        required: false
+        default: false
+        type: boolean
       legacy-signature:
         required: false
         default: false
@@ -71,15 +78,15 @@ on:
         required: false
         default: false
         type: boolean
+      openmetrics:
+        required: false
+        default: false
+        type: boolean
       package:
         required: false
         default: false
         type: boolean
       readmes:
-        required: false
-        default: false
-        type: boolean
-      recommended-monitors:
         required: false
         default: false
         type: boolean
@@ -95,6 +102,10 @@ on:
         required: false
         default: false
         type: boolean
+      version:
+        required: false
+        default: false
+        type: boolean
 
 defaults:
   run:
@@ -106,16 +117,16 @@ jobs:
     runs-on: ubuntu-22.04
 
     env:
-      PYTHON_VERSION: "3.8"
+      PYTHON_VERSION: "3.11"
       TARGET: ${{ github.event_name == 'pull_request' && 'changed' || '' }}
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: "0"
 
     - name: Set up Python ${{ env.PYTHON_VERSION }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: "${{ env.PYTHON_VERSION }}"
 
@@ -127,7 +138,7 @@ jobs:
 
     - name: Install ddev from PyPI
       if: inputs.repo != 'core'
-      run: pip install ddev
+      run: pip install ddev${{ inputs.ddev-version }}
 
     - name: Configure ddev
       run: |
@@ -144,7 +155,7 @@ jobs:
       if: inputs.ci
       run: ddev validate ci
 
-    - name: Validate every integration has a defined owner
+    - name: Validate the CODEOWNERS file
       if: inputs.codeowners
       run: ddev validate codeowners
 
@@ -158,7 +169,7 @@ jobs:
 
     - name: Validate dependencies
       if: inputs.dep
-      run: ddev validate dep $TARGET
+      run: ddev validate dep
 
     - name: Validate EULA files
       if: inputs.eula
@@ -196,6 +207,10 @@ jobs:
       if: inputs.models
       run: ddev validate models $TARGET
 
+    - name: Validate openmetrics metric limit
+      if: inputs.openmetrics
+      run: ddev validate openmetrics $TARGET
+
     - name: Validate Python project metadata
       if: inputs.package
       run: ddev validate package $TARGET
@@ -203,10 +218,6 @@ jobs:
     - name: Validate README files
       if: inputs.readmes
       run: ddev validate readmes $TARGET
-
-    - name: Validate recommended monitors
-      if: inputs.recommended-monitors
-      run: ddev validate recommended-monitors $TARGET
 
     - name: Validate saved views
       if: inputs.saved-views
@@ -220,6 +231,14 @@ jobs:
       if: inputs.typos
       run: ddev validate typos $TARGET
 
+    - name: Validate labeler configuration
+      if: inputs.labeler
+      run: ddev validate labeler
+
+    - name: Validate target version
+      if: inputs.version
+      run: ddev validate version $TARGET
+
     # Every validation below here is sorted by increasing runtime rather than alphabetically
     - name: Validate third-party license metadata
       if: inputs.licenses
@@ -230,10 +249,10 @@ jobs:
 
     - name: Comment PR on failure
       if: ${{ failure() && github.event.pull_request.merged != true }}
-      uses: actions/github-script@0.3.0
+      uses: actions/github-script@v7
       continue-on-error: true
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const { issue: { number: issue_number }, repo: { owner, repo }  } = context;
-          github.issues.createComment({ issue_number, owner, repo, body: "The `validations` job has failed; please review the `Files changed` tab for possible suggestions to resolve." });
+          github.rest.issues.createComment({ issue_number, owner, repo, body: "The `validations` job has failed; please review the `Files changed` tab for possible suggestions to resolve." });

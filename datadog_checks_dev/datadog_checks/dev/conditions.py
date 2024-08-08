@@ -64,14 +64,16 @@ class CheckEndpoints(LazyFunction):
     def __init__(
         self,
         endpoints,  # type: Union[str, List[str]]
-        timeout=1,  # type: int,
+        timeout=1,  # type: int
         attempts=60,  # type: int
         wait=1,  # type: int
+        send_request=None,
     ):
         self.endpoints = [endpoints] if isinstance(endpoints, string_types) else endpoints
         self.timeout = timeout
         self.attempts = attempts
         self.wait = wait
+        self.send_request = urlopen if send_request is None else send_request
 
     def __call__(self):
         last_endpoint = ''
@@ -81,12 +83,12 @@ class CheckEndpoints(LazyFunction):
             for endpoint in self.endpoints:
                 last_endpoint = endpoint
                 try:
-                    request = urlopen(endpoint, timeout=self.timeout)
+                    response = self.send_request(endpoint, timeout=self.timeout)
                 except Exception as e:
                     last_error = str(e)
                     break
                 else:
-                    status_code = request.getcode()
+                    status_code = response.getcode()
                     if 400 <= status_code < 600:
                         last_error = 'status {}'.format(status_code)
                         break
@@ -189,7 +191,7 @@ class CheckDockerLogs(CheckCommandOutput):
         matches=1,  # type: Union[str, int]
         stdout=True,  # type: bool
         stderr=True,  # type: bool
-        attempts=60,  # type: int,
+        attempts=60,  # type: int
         wait=1,  # type: int
     ):
         """

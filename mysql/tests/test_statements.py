@@ -30,6 +30,8 @@ statement_samples_keys = ["query_samples", "statement_samples"]
 # depend on a default schema being set on the connection
 DEFAULT_FQ_SUCCESS_QUERY = "SELECT * FROM information_schema.TABLES"
 
+CLOSE_TO_ZERO_INTERVAL = 0.0000001
+
 
 @pytest.fixture
 def dbm_instance(instance_complex):
@@ -37,10 +39,17 @@ def dbm_instance(instance_complex):
     instance_complex['disable_generic_tags'] = False
     # set the default for tests to run sychronously to ensure we don't have orphaned threads running around
     instance_complex['query_samples'] = {'enabled': True, 'run_sync': True, 'collection_interval': 1}
-    # set a very small collection interval so the tests go fast
-    instance_complex['query_metrics'] = {'enabled': True, 'run_sync': True, 'collection_interval': 0.1}
+    # Set collection_interval close to 0. This is needed if the test runs the check multiple times.
+    # This prevents DBMAsync from skipping job executions, as it is designed
+    # to not execute jobs more frequently than their collection period.
+    instance_complex['query_metrics'] = {
+        'enabled': True,
+        'run_sync': True,
+        'collection_interval': CLOSE_TO_ZERO_INTERVAL,
+    }
     # don't need query activity for these tests
     instance_complex['query_activity'] = {'enabled': False}
+    instance_complex['collect_settings'] = {'enabled': False}
     return instance_complex
 
 
@@ -225,36 +234,80 @@ def test_statement_metrics_with_duplicates(aggregator, dd_run_check, dbm_instanc
 @pytest.mark.integration
 @pytest.mark.usefixtures('dd_environment')
 @pytest.mark.parametrize(
-    "cloud_metadata",
+    "input_cloud_metadata,output_cloud_metadata",
     [
-        {},
-        {
-            'azure': {
-                'deployment_type': 'flexible_server',
-                'name': 'test-server',
+        ({}, {}),
+        (
+            {
+                'azure': {
+                    'deployment_type': 'flexible_server',
+                    'name': 'test-server.database.windows.net',
+                },
             },
-        },
-        {
-            'aws': {
-                'instance_endpoint': 'foo.aws.com',
+            {
+                'azure': {
+                    'deployment_type': 'flexible_server',
+                    'name': 'test-server.database.windows.net',
+                },
             },
-            'azure': {
-                'deployment_type': 'flexible_server',
-                'name': 'test-server',
+        ),
+        (
+            {
+                'azure': {
+                    'deployment_type': 'flexible_server',
+                    'fully_qualified_domain_name': 'test-server.database.windows.net',
+                },
             },
-        },
-        {
-            'gcp': {
-                'project_id': 'foo-project',
-                'instance_id': 'bar',
-                'extra_field': 'included',
+            {
+                'azure': {
+                    'deployment_type': 'flexible_server',
+                    'name': 'test-server.database.windows.net',
+                },
             },
-        },
+        ),
+        (
+            {
+                'aws': {
+                    'instance_endpoint': 'foo.aws.com',
+                },
+                'azure': {
+                    'deployment_type': 'flexible_server',
+                    'name': 'test-server.database.windows.net',
+                },
+            },
+            {
+                'aws': {
+                    'instance_endpoint': 'foo.aws.com',
+                },
+                'azure': {
+                    'deployment_type': 'flexible_server',
+                    'name': 'test-server.database.windows.net',
+                },
+            },
+        ),
+        (
+            {
+                'gcp': {
+                    'project_id': 'foo-project',
+                    'instance_id': 'bar',
+                    'extra_field': 'included',
+                },
+            },
+            {
+                'gcp': {
+                    'project_id': 'foo-project',
+                    'instance_id': 'bar',
+                    'extra_field': 'included',
+                },
+            },
+        ),
     ],
 )
-def test_statement_metrics_cloud_metadata(aggregator, dd_run_check, dbm_instance, cloud_metadata, datadog_agent):
-    if cloud_metadata:
-        for k, v in cloud_metadata.items():
+def test_statement_metrics_cloud_metadata(
+    aggregator, dd_run_check, dbm_instance, input_cloud_metadata, output_cloud_metadata, datadog_agent
+):
+    if input_cloud_metadata:
+        for k, v in input_cloud_metadata.items():
             dbm_instance[k] = v
     mysql_check = MySql(common.CHECK_NAME, {}, [dbm_instance])
 
@@ -282,7 +335,7 @@ def test_statement_metrics_cloud_metadata(aggregator, dd_run_check, dbm_instance
     assert event['ddagenthostname'] == datadog_agent.get_hostname()
     assert event['mysql_version'] == mysql_check.version.version + '+' + mysql_check.version.build
     assert event['mysql_flavor'] == mysql_check.version.flavor
-    assert event['cloud_metadata'] == cloud_metadata, "wrong cloud_metadata"
+    assert event['cloud_metadata'] == output_cloud_metadata, "wrong cloud_metadata"
 
 
 @pytest.mark.integration
@@ -355,6 +408,9 @@ def test_statement_samples_collect(
     caplog.set_level(logging.INFO, logger="datadog_checks.mysql.collection_utils")
     caplog.set_level(logging.DEBUG, logger="datadog_checks")
     caplog.set_level(logging.DEBUG, logger="tests.test_mysql")
+    # This prevents DBMAsync from skipping job executions, as a job should not be executed
+    # more frequently than its collection period.
+    dbm_instance['query_samples']['collection_interval'] = CLOSE_TO_ZERO_INTERVAL
 
     mysql_check = MySql(common.CHECK_NAME, {}, [dbm_instance])
     if explain_strategy:
@@ -402,9 +458,7 @@ def test_statement_samples_collect(
         statement[:1021] + '...'
         if len(statement) > 1024
         and (MYSQL_VERSION_PARSED == parse_version('5.6') or environ.get('MYSQL_FLAVOR') == 'mariadb')
-        else statement[:4093] + '...'
-        if len(statement) > 4096
-        else statement
+        else statement[:4093] + '...' if len(statement) > 4096 else statement
     )
 
     matching = [e for e in events if expected_statement_prefix.startswith(e['db']['statement'])]
@@ -434,6 +488,8 @@ def test_statement_samples_collect(
             assert event['db']['plan']['collection_errors'] == expected_collection_errors
         else:
             assert event['db']['plan']['collection_errors'] is None
+        assert event['timestamp'] is not None
+        assert time.time() - event['timestamp'] < 60  # ensure the timestamp is recent
 
     # we avoid closing these in a try/finally block in order to maintain the connections in case we want to
     # debug the test with --pdb
@@ -485,7 +541,9 @@ def test_missing_explain_procedure(dbm_instance, dd_run_check, aggregator, state
         'sql_text': statement,
         'query': statement,
         'digest_text': statement,
-        'timer_end_time_s': 10003.1,
+        'now': time.time(),
+        'uptime': '21466230',
+        'timer_end': 3019558487284095384,
         'timer_wait_ns': 12.9,
     }
 
@@ -500,6 +558,7 @@ def test_missing_explain_procedure(dbm_instance, dd_run_check, aggregator, state
 def test_performance_schema_disabled(dbm_instance, dd_run_check):
     # Disable query samples to avoid interference from queries from the db running explain plans
     # and isolate the fake row from it
+    dbm_instance['options']['extra_performance_metrics'] = False
     dbm_instance['query_samples']['enabled'] = False
     mysql_check = MySql(common.CHECK_NAME, {}, [dbm_instance])
 
@@ -519,6 +578,18 @@ def test_performance_schema_disabled(dbm_instance, dd_run_check):
         'for more details\n'
         'code=performance-schema-not-enabled host=stubbed.hostname'
     ]
+
+    # as we faked the performance schema being disabled, running the check should restore the flag to True
+    # this is to "simulate" enabling performance schema without restarting the agent
+    # as the next check run will update the flag
+    assert mysql_check.performance_schema_enabled is True
+
+    # clear the warnings and rerun collect_per_statement_metrics
+    mysql_check.warnings.clear()
+    mysql_check._statement_metrics.collect_per_statement_metrics()
+    mysql_check._statement_metrics.collect_per_statement_metrics()
+    dd_run_check(mysql_check)
+    assert mysql_check.warnings == []
 
 
 @pytest.mark.integration
@@ -602,6 +673,9 @@ def test_statement_reported_hostname(
     aggregator, dd_run_check, dbm_instance, datadog_agent, reported_hostname, expected_hostname
 ):
     dbm_instance['reported_hostname'] = reported_hostname
+    # This prevents DBMAsync from skipping job executions, as a job should not be executed
+    # more frequently than its collection period.
+    dbm_instance['query_samples']['collection_interval'] = CLOSE_TO_ZERO_INTERVAL
     mysql_check = MySql(common.CHECK_NAME, {}, [dbm_instance])
 
     dd_run_check(mysql_check)
@@ -834,7 +908,6 @@ def test_statement_samples_enable_consumers(dd_run_check, dbm_instance, root_con
     mysql_check = MySql(common.CHECK_NAME, {}, [dbm_instance])
 
     all_consumers = {'events_statements_current', 'events_statements_history', 'events_statements_history_long'}
-    all_consumers_gt_8_0_28 = all_consumers.union({'events_statements_cpu'})  # CPU consumer was added in MySQL 8.0.28
 
     # deliberately disable one of the consumers
     consumer_to_disable = 'events_statements_history_long'
@@ -852,7 +925,7 @@ def test_statement_samples_enable_consumers(dd_run_check, dbm_instance, root_con
     enabled_consumers = mysql_check._statement_samples._get_enabled_performance_schema_consumers()
     if events_statements_enable_procedure == "datadog.enable_events_statements_consumers":
         # ensure that the consumer was re-enabled by the check run
-        assert enabled_consumers == all_consumers or enabled_consumers == all_consumers_gt_8_0_28
+        assert enabled_consumers == all_consumers
     else:
         # the consumer should not have been re-enabled
         assert enabled_consumers == original_enabled_consumers
@@ -881,6 +954,7 @@ def test_normalize_queries(dbm_instance):
             'digest_text': 'SELECT * from table where name = ?',
             'query_signature': u'761498b7d5f04d11',
             'dd_commands': None,
+            'dd_comments': None,
             'dd_tables': None,
             'count': 41,
             'time': 66721400,
@@ -908,9 +982,28 @@ def test_normalize_queries(dbm_instance):
             'digest_text': None,
             'query_signature': None,
             'dd_commands': None,
+            'dd_comments': None,
             'dd_tables': None,
             'count': 41,
             'time': 66721400,
             'lock_time': 18298000,
         }
     ]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "timer_end,now,uptime,expected_timestamp",
+    [
+        pytest.param(3019558487284095384, 1708025457, 100, 1711044915487, id="picoseconds not overflow"),
+        pytest.param(3019558487284095384, 1708025457, 21466230, 1708025529560, id="picoseconds overflow"),
+    ],
+)
+def test_statement_samples_calculate_timer_end(dbm_instance, timer_end, now, uptime, expected_timestamp):
+    check = MySql(common.CHECK_NAME, {}, [dbm_instance])
+    row = {
+        'timer_end': timer_end,
+        'now': now,
+        'uptime': uptime,
+    }
+    assert check._statement_samples._calculate_timer_end(row) == expected_timestamp

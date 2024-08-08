@@ -5,6 +5,8 @@ import copy
 import os
 import socket
 
+from confluent_kafka.admin import AdminClient
+
 from datadog_checks.dev import get_docker_hostname
 from datadog_checks.dev.utils import get_metadata_metrics
 
@@ -12,7 +14,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 HOST = get_docker_hostname()
 HOST_IP = socket.gethostbyname(HOST)
 KAFKA_CONNECT_STR = f'{HOST_IP}:9092'
-TOPICS = ['marvel', 'dc']
+CONSUMED_TOPICS = ['marvel', 'dc']
+TOPICS = ['marvel', 'dc', 'unconsumed_topic']
 PARTITIONS = [0, 1]
 BROKER_METRICS = ['kafka.broker_offset']
 CONSUMER_METRICS = ['kafka.consumer_offset', 'kafka.consumer_lag']
@@ -76,23 +79,43 @@ elif AUTHENTICATION == "kerberos":
     E2E_INSTANCE["sasl_kerberos_keytab"] = "/var/lib/secret/localhost.key"
 
 
+def get_cluster_id():
+    config = {
+        "bootstrap.servers": INSTANCE['kafka_connect_str'],
+        "socket.timeout.ms": 1000,
+        "topic.metadata.refresh.interval.ms": 2000,
+    }
+    config.update(get_authentication_configuration(INSTANCE))
+    client = AdminClient(config)
+    return client.list_topics(timeout=5).cluster_id
+
+
 def assert_check_kafka(aggregator, consumer_groups):
+    cluster_id = get_cluster_id()
     for name, consumer_group in consumer_groups.items():
         for topic, partitions in consumer_group.items():
             for partition in partitions:
-                tags = [f"topic:{topic}", f"partition:{partition}"] + ['optional:tag1']
+                tags = [f"topic:{topic}", f"partition:{partition}", "kafka_cluster_id:" + cluster_id] + [
+                    'optional:tag1'
+                ]
                 for mname in BROKER_METRICS:
                     aggregator.assert_metric(mname, tags=tags, count=1)
 
                 for mname in CONSUMER_METRICS:
-                    aggregator.assert_metric(
-                        mname,
-                        tags=tags + [f"consumer_group:{name}"],
-                        count=1,
-                    )
+                    aggregator.assert_metric(mname)
+                    tags = tags + [f"consumer_group:{name}"]
+                    for tag in tags:
+                        aggregator.assert_metric_has_tag(mname, tag)
 
     aggregator.assert_all_metrics_covered()
     aggregator.assert_metrics_using_metadata(get_metadata_metrics())
+
+
+def assert_check_kafka_has_consumer_group_state_tag(aggregator, consumer_groups):
+    for _, _ in consumer_groups.items():
+        for mname in CONSUMER_METRICS:
+            # Check for the tag prefix consumer_group_state
+            aggregator.assert_metric_has_tag_prefix(mname, tag_prefix='consumer_group_state')
 
 
 def get_authentication_configuration(instance):

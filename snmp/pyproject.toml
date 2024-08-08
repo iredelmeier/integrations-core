@@ -25,19 +25,17 @@ classifiers = [
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: BSD License",
     "Programming Language :: Python :: 2.7",
-    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.11",
     "Topic :: System :: Monitoring",
     "Private :: Do Not Upload",
 ]
 dependencies = [
-    "datadog-checks-base>=25.1.0",
+    "datadog-checks-base>=32.6.0",
 ]
 dynamic = [
     "version",
 ]
-
-[project.license]
-text = "BSD-3-Clause"
+license = "BSD-3-Clause"
 
 [project.optional-dependencies]
 deps = [
@@ -45,8 +43,9 @@ deps = [
     "ipaddress==1.0.23; python_version < '3.0'",
     "ply==3.11",
     "pyasn1==0.4.6",
-    "pycryptodomex==3.10.1",
-    "pysmi==0.3.4",
+    "pycryptodomex==3.20.0",
+    "pysmi==0.3.4; python_version < '3.0'",
+    "pysmi==1.4.4; python_version > '3.0'",
     "pysnmp-mibs==0.1.6",
     "pysnmp==4.4.9",
 ]

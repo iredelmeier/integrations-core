@@ -6,10 +6,11 @@ from datadog_checks.base import OpenMetricsBaseCheck
 
 DEFAULT_METRICS = {
     'admission_webhooks_certificate_expiry': 'admission_webhooks.certificate_expiry',
+    'admission_webhooks_cws_exec_instrumentation_attempts': 'admission_webhooks.cws_exec_instrumentation_attempts',
+    'admission_webhooks_cws_pod_instrumentation_attempts': 'admission_webhooks.cws_pod_instrumentation_attempts',
     'admission_webhooks_library_injection_attempts': 'admission_webhooks.library_injection_attempts',
     'admission_webhooks_library_injection_errors': 'admission_webhooks.library_injection_errors',
     'admission_webhooks_mutation_attempts': 'admission_webhooks.mutation_attempts',
-    'admission_webhooks_mutation_errors': 'admission_webhooks.mutation_errors',
     'admission_webhooks_patcher_attempts': 'admission_webhooks.patcher.attempts',
     'admission_webhooks_patcher_completed': 'admission_webhooks.patcher.completed',
     'admission_webhooks_patcher_errors': 'admission_webhooks.patcher.errors',
@@ -48,15 +49,26 @@ DEFAULT_METRICS = {
     'go_threads': 'go.threads',
     'kubernetes_apiserver_emitted_events': 'kubernetes_apiserver.emitted_events',
     'kubernetes_apiserver_kube_events': 'kubernetes_apiserver.kube_events',
+    'language_detection_dca_handler_processed_requests': 'language_detection_dca_handler.processed_requests',
+    'language_detection_patcher_patches': 'language_detection_patcher.patches',
     'rate_limit_queries_limit': 'datadog.rate_limit_queries.limit',
     'rate_limit_queries_period': 'datadog.rate_limit_queries.period',
     'rate_limit_queries_remaining': 'datadog.rate_limit_queries.remaining',
+    'rate_limit_queries_remaining_min': 'datadog.rate_limit_queries.remaining_min',
     'rate_limit_queries_reset': 'datadog.rate_limit_queries.reset',
     'secret_backend__elapsed_ms': 'secret_backend.elapsed',
+    'tagger_stored_entities': 'tagger.stored_entities',
+    'tagger_updated_entities': 'tagger.updated_entities',
+    'workloadmeta_events_received': 'workloadmeta.events_received',
+    'workloadmeta_notifications_sent': 'workloadmeta.notifications_sent',
+    'workloadmeta_stored_entities': 'workloadmeta.stored_entities',
+    'workloadmeta_subscribers': 'workloadmeta.subscribers',
 }
 
 
 class DatadogClusterAgentCheck(OpenMetricsBaseCheck):
+    DEFAULT_METRIC_LIMIT = 0
+
     def __init__(self, name, init_config, instances):
         super(DatadogClusterAgentCheck, self).__init__(
             name,

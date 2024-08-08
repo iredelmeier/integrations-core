@@ -12,13 +12,36 @@
     "title": "Postgres",
     "media": [],
     "classifier_tags": [
-      "Category::Data Store",
+      "Category::Data Stores",
       "Category::Log Collection",
-      "Category::Notification",
+      "Category::Notifications",
       "Category::Tracing",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "documentation",
+        "url": "https://docs.datadoghq.com/integrations/faq/postgres-custom-metric-collection-explained/"
+      },
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/100x-faster-postgres-performance-by-changing-1-line"
+      },
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/postgresql-monitoring"
+      },
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/postgresql-monitoring-tools"
+      },
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/collect-postgresql-data-with-datadog"
+      }
     ]
   },
   "author": {
@@ -27,7 +50,6 @@
     "homepage": "https://www.datadoghq.com",
     "sales_email": "info@datadoghq.com"
   },
-  "oauth": {},
   "assets": {
     "integration": {
       "source_type_name": "Postgres",
@@ -52,7 +74,9 @@
         "postgres -D",
         "pg_ctl start -l logfile",
         "postgres -c 'pg_ctl start -D -l"
-      ]
+      ],
+      "source_type_id": 28,
+      "auto_install": true
     },
     "dashboards": {
       "postgresql": "assets/dashboards/postgresql_dashboard.json",
@@ -68,9 +92,6 @@
       "postgres_pattern": "assets/saved_views/postgres_pattern.json",
       "sessions_by_host": "assets/saved_views/sessions_by_host.json",
       "postgres_processes": "assets/saved_views/postgres_processes.json"
-    },
-    "logs": {
-      "source": "postgresql"
     }
   }
 }

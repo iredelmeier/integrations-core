@@ -13,7 +13,8 @@
     "media": [],
     "classifier_tags": [
       "Category::Log Collection",
-      "Supported OS::Windows"
+      "Supported OS::Windows",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -22,7 +23,6 @@
     "homepage": "https://www.datadoghq.com",
     "sales_email": "info@datadoghq.com"
   },
-  "oauth": {},
   "assets": {
     "integration": {
       "source_type_name": "IIS",
@@ -39,7 +39,9 @@
       },
       "service_checks": {
         "metadata_path": "assets/service_checks.json"
-      }
+      },
+      "source_type_id": 46,
+      "auto_install": true
     },
     "dashboards": {
       "iis": "assets/dashboards/iis_dashboard.json",
@@ -56,9 +58,6 @@
       "status_code_overview": "assets/saved_views/status_code_overview.json",
       "bot_errors": "assets/saved_views/bot_errors.json",
       "response_time_overview": "assets/saved_views/response_time.json"
-    },
-    "logs": {
-      "source": "iis"
     }
   }
 }

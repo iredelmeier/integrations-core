@@ -1,7 +1,6 @@
 # (C) Datadog, Inc. 2018-present
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
-import itertools
 import threading
 from contextlib import closing
 
@@ -9,6 +8,7 @@ import oracledb
 from six import PY2
 
 from datadog_checks.base import AgentCheck, ConfigurationError, is_affirmative
+from datadog_checks.base.errors import SkipInstanceError
 from datadog_checks.base.utils.db import QueryManager
 
 from . import queries
@@ -49,6 +49,19 @@ class Oracle(AgentCheck):
     SERVICE_CHECK_NAME = 'can_connect'
     SERVICE_CHECK_CAN_QUERY = "can_query"
 
+    def __new__(cls, name, init_config, instances):
+        init_config_loader = init_config.get("loader", "core")
+        instance = instances[0]
+        instance_loader = instance.get("loader", init_config_loader)
+        if instance_loader != "python":
+            raise SkipInstanceError(
+                'Oracle integration written in Python is deprecated. '
+                'Set `loader = core` in the configuration file to avoid this error. '
+                'Loading the latest Oracle check now.'
+            )
+
+        return super(Oracle, cls).__new__(cls)
+
     def __init__(self, name, init_config, instances):
         if PY2:
             raise ConfigurationError(
@@ -77,8 +90,6 @@ class Oracle(AgentCheck):
         if not self.instance.get('only_custom_queries', False):
             manager_queries.extend([queries.ProcessMetrics, queries.SystemMetrics, queries.TableSpaceMetrics])
 
-        self._fix_custom_queries()
-
         self._query_manager = QueryManager(
             self,
             self.execute_query_raw,
@@ -91,22 +102,6 @@ class Oracle(AgentCheck):
 
         self._query_errors = 0
         self._connection_errors = 0
-
-    def _fix_custom_queries(self):
-        """
-        For backward compatibility reasons, if a custom query specifies a
-        `metric_prefix`, change the submission name to contain it.
-        """
-        custom_queries = self.instance.get('custom_queries', [])
-        global_custom_queries = self.init_config.get('global_custom_queries', [])
-        for query in itertools.chain(custom_queries, global_custom_queries):
-            prefix = query.get('metric_prefix')
-            if prefix and prefix != self.__NAMESPACE__:
-                if prefix.startswith(self.__NAMESPACE__ + '.'):
-                    prefix = prefix[len(self.__NAMESPACE__) + 1 :]
-                for column in query.get('columns', []):
-                    if column.get('type') != 'tag' and column.get('name'):
-                        column['name'] = '{}.{}'.format(prefix, column['name'])
 
     def execute_query_raw(self, query):
         with closing(self._connection.cursor()) as cursor:
@@ -151,6 +146,7 @@ class Oracle(AgentCheck):
     def _connection(self):
         if self._cached_connection is None:
             if self.can_use_jdbc():
+                self.log.debug('Detected that JDBC can be used to connect, will attempt first')
                 try:
                     self._cached_connection = self._jdbc_connect()
                 except Exception as e:
@@ -158,6 +154,7 @@ class Oracle(AgentCheck):
                     self._connection_errors += 1
             else:
                 if self._use_instant_client:
+                    self.log.debug('Connecting to Oracle using Oracle Instant Client')
                     self.init_instant_client()
                 else:
                     self.log.debug('Connecting to Oracle using the native client')
@@ -233,6 +230,7 @@ class Oracle(AgentCheck):
         try:
             with jdbc_lock:
                 if jpype.isJVMStarted() and not jpype.isThreadAttachedToJVM():
+                    self.log.debug("JVM started but thread not attached to JVM.")
                     jpype.attachThreadToJVM()
                     jpype.java.lang.Thread.currentThread().setContextClassLoader(
                         jpype.java.lang.ClassLoader.getSystemClassLoader()
@@ -240,9 +238,18 @@ class Oracle(AgentCheck):
                 connection = jdb.connect(
                     self.ORACLE_DRIVER_CLASS, connect_string, jdbc_connect_properties, self._jdbc_driver
                 )
+                if jpype.isJVMStarted() and jpype.isThreadAttachedToJVM():
+                    jpype.detachThreadFromJVM()
+                    self.log.debug("Detaching thread from JVM after connection")
+
             self.log.debug("Connected to Oracle DB using JDBC connector")
+
             return connection
         except Exception as e:
+            if jpype.isJVMStarted() and jpype.isThreadAttachedToJVM():
+                jpype.detachThreadFromJVM()
+                self.log.debug("Thread detached from JVM after JDBC connection failure")
+
             self._connection_errors += 1
             if "Class {} not found".format(self.ORACLE_DRIVER_CLASS) in str(e):
                 msg = """Cannot run the Oracle check until either the Oracle instant client or the JDBC Driver

@@ -1,5 +1,5 @@
 [env.collectors.datadog-checks]
-check-types = true
+check-types = false
 mypy-args = [
     "--py2",
     "--install-types",
@@ -15,19 +15,19 @@ mypy-deps = [
 DDEV_SKIP_GENERIC_TAGS_CHECK = "true"
 
 [[envs.default.matrix]]
-python = ["2.7", "3.8"]
+python = ["2.7", "3.11"]
 version = ["8.4", "10.0"]
 tls = ["false"]
 
 [[envs.default.matrix]]
-python = ["2.7", "3.8"]
+python = ["2.7", "3.11"]
 version = ["8.4"]
 tls = ["true"]
 
 [envs.default.overrides]
 matrix.version.env-vars = [
     { key = "VOLTDB_VERSION", value = "8.4.2", if = ["8.4"] },
-    { key = "VOLTDB_IMAGE", value = "voltdb/voltdb-community:8.4.2", if = ["8.4"] },
+    { key = "VOLTDB_IMAGE", value = "datadog/docker-library:voltdb_8_4", if = ["8.4"] },
     { key = "VOLTDB_VERSION", value = "10.0.0", if = ["10.0"] },
     { key = "VOLTDB_IMAGE", value = "datadog/docker-library:voltdb_10_0", if = ["10.0"] }
 ]

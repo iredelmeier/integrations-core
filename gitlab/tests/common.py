@@ -19,6 +19,9 @@ GITLAB_LOCAL_GITALY_PROMETHEUS_PORT = 8089
 
 PROMETHEUS_ENDPOINT = "http://{}:{}/metrics".format(HOST, GITLAB_LOCAL_PROMETHEUS_PORT)
 GITLAB_PROMETHEUS_ENDPOINT = "http://{}:{}/-/metrics".format(HOST, GITLAB_LOCAL_PORT)
+GITLAB_READINESS_ENDPOINT = "http://{}:{}/-/readiness".format(HOST, GITLAB_LOCAL_PORT)
+GITLAB_LIVENESS_ENDPOINT = "http://{}:{}/-/liveness".format(HOST, GITLAB_LOCAL_PORT)
+GITLAB_HEALTH_ENDPOINT = "http://{}:{}/-/health".format(HOST, GITLAB_LOCAL_PORT)
 GITLAB_GITALY_PROMETHEUS_ENDPOINT = "http://{}:{}/metrics".format(HOST, GITLAB_LOCAL_GITALY_PROMETHEUS_PORT)
 GITLAB_URL = "http://{}:{}".format(HOST, GITLAB_LOCAL_PORT)
 GITLAB_TAGS = ['gitlab_host:{}'.format(HOST), 'gitlab_port:{}'.format(GITLAB_LOCAL_PORT)]
@@ -110,6 +113,36 @@ COMMON_METRICS = [
     "ruby.threads_running_threads",
     "transaction.rails_queue_duration_total",
     "ruby.process_cpu_seconds_total",
+    "geo.group.wiki.repositories",
+    "geo.group.wiki.repositories_checksum_total",
+    "geo.group.wiki.repositories_checksummed",
+    "geo.group.wiki.repositories_checksum_failed",
+    "geo.group.wiki.repositories_failed",
+    "geo.group.wiki.repositories_registry",
+    "geo.group.wiki.repositories_synced",
+    "geo.group.wiki.repositories_verification_failed",
+    "geo.group.wiki.repositories_verified",
+    "geo.group.wiki.repositories_verification_total",
+    "geo.project.repositories",
+    "geo.project.repositories_checksum_total",
+    "geo.project.repositories_checksummed",
+    "geo.project.repositories_checksum_failed",
+    "geo.project.repositories_failed",
+    "geo.project.repositories_registry",
+    "geo.project.repositories_synced",
+    "geo.project.repositories_verification_failed",
+    "geo.project.repositories_verified",
+    "geo.project.repositories_verification_total",
+    "geo.project.wiki.repositories",
+    "geo.project.wiki.repositories_checksum_total",
+    "geo.project.wiki.repositories_checksummed",
+    "geo.project.wiki.repositories_checksum_failed",
+    "geo.project.wiki.repositories_failed",
+    "geo.project.wiki.repositories_registry",
+    "geo.project.wiki.repositories_synced",
+    "geo.project.wiki.repositories_verification_failed",
+    "geo.project.wiki.repositories_verified",
+    "geo.project.wiki.repositories_verification_total",
 ]
 
 V1_METRICS = COMMON_METRICS + [
@@ -260,11 +293,15 @@ GITALY_METRICS_TO_TEST = [
 ]
 
 
-def assert_check(aggregator, metrics, use_openmetrics=False):
+def assert_check(aggregator, metrics=None, use_openmetrics=False):
     """
     Basic Test for gitlab integration.
     """
     # Make sure we're receiving gitlab service checks
+
+    if not metrics:
+        metrics = []
+
     for service_check in GitlabCheck.ALLOWED_SERVICE_CHECKS:
         aggregator.assert_service_check(
             'gitlab.{}'.format(service_check), status=GitlabCheck.OK, tags=GITLAB_TAGS + CUSTOM_TAGS
@@ -291,3 +328,6 @@ def assert_check(aggregator, metrics, use_openmetrics=False):
 
     for metric in metrics:
         aggregator.assert_metric("gitlab.{}".format(metric))
+
+    # Assert that we have at least one of them
+    assert len(aggregator.metric_names) > 1

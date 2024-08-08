@@ -12,12 +12,13 @@
     "title": "SingleStore",
     "media": [],
     "classifier_tags": [
-      "Category::Data Store",
+      "Category::Data Stores",
       "Category::Log Collection",
       "Category::Network",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
     ]
   },
   "author": {
@@ -26,7 +27,6 @@
     "homepage": "https://www.datadoghq.com",
     "sales_email": "info@datadoghq.com"
   },
-  "oauth": {},
   "assets": {
     "integration": {
       "source_type_name": "SingleStore",
@@ -46,7 +46,9 @@
       },
       "process_signatures": [
         "memsqld"
-      ]
+      ],
+      "source_type_id": 10215,
+      "auto_install": true
     },
     "dashboards": {
       "Singlestore Overview": "assets/dashboards/overview.json"
@@ -55,9 +57,6 @@
       "[SingleStore] License expiration": "assets/monitors/license_expiration.json",
       "[SingleStore] Read failures rate": "assets/monitors/read_failures.json",
       "[SingleStore] Write failures rate": "assets/monitors/write_failures.json"
-    },
-    "logs": {
-      "source": "singlestore"
     }
   }
 }

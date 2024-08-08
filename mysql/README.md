@@ -26,17 +26,10 @@ On each MySQL server, create a database user for the Datadog Agent.
 
 The following instructions grant the Agent permission to login from any host using `datadog@'%'`. You can restrict the `datadog` user to be allowed to login only from localhost by using `datadog@'localhost'`. See [MySQL Adding Accounts, Assigning Privileges, and Dropping Accounts][5] for more info.
 
-For MySQL 5.6 or MySQL 5.7 create the `datadog` user with the following command:
+Create the `datadog` user with the following command:
 
 ```shell
 mysql> CREATE USER 'datadog'@'%' IDENTIFIED BY '<UNIQUEPASSWORD>';
-Query OK, 0 rows affected (0.00 sec)
-```
-
-For MySQL 8.0 or greater, create the `datadog` user with the native password hashing method:
-
-```shell
-mysql> CREATE USER 'datadog'@'%' IDENTIFIED WITH mysql_native_password by '<UNIQUEPASSWORD>';
 Query OK, 0 rows affected (0.00 sec)
 ```
 
@@ -60,7 +53,7 @@ Query OK, 0 rows affected, 1 warning (0.00 sec)
 For MySQL 8.0 or greater, grant `replication client` and set `max_user_connections` with the following commands:
 
 ```shell
-mysql> GRANT REPLICATION CLIENT ON *.* TO 'datadog'@'%'
+mysql> GRANT REPLICATION CLIENT ON *.* TO 'datadog'@'%';
 Query OK, 0 rows affected (0.00 sec)
 mysql> ALTER USER 'datadog'@'%' WITH MAX_USER_CONNECTIONS 5;
 Query OK, 0 rows affected (0.00 sec)
@@ -100,6 +93,8 @@ Query OK, 0 rows affected (0.00 sec)
 
 Follow the instructions below to configure this check for an Agent running on a host. For containerized environments, see the [Docker](?tab=docker#docker), [Kubernetes](?tab=kubernetes#kubernetes), or [ECS](?tab=ecs#ecs) sections.
 
+**Note**: For a full list of available configuration options, see the [sample mysql.d/conf.yaml][8].
+
 <!-- xxx tabs xxx -->
 <!-- xxx tab "Host" xxx -->
 
@@ -107,7 +102,9 @@ Follow the instructions below to configure this check for an Agent running on a 
 
 To configure this check for an Agent running on a host:
 
-Edit the `mysql.d/conf.yaml` file, in the `conf.d/` folder at the root of your [Agent's configuration directory][7] to start collecting your MySQL [metrics](#metric-collection) and [logs](#log-collection). See the [sample mysql.d/conf.yaml][8] for all available configuration options.
+Edit the `mysql.d/conf.yaml` file, in the `conf.d/` folder at the root of your [Agent's configuration directory][7] to start collecting your MySQL [metrics](#metric-collection) and [logs](#log-collection).
+
+For a full list of available configuration options, see the [sample `mysql.d/conf.yaml`][8].
 
 ##### Metric collection
 
@@ -126,7 +123,6 @@ Edit the `mysql.d/conf.yaml` file, in the `conf.d/` folder at the root of your [
         galera_cluster: true
         extra_status_metrics: true
         extra_innodb_metrics: true
-        extra_performance_metrics: true
         schema_size_metrics: false
         disable_innodb_metrics: false
   ```
@@ -136,8 +132,6 @@ Edit the `mysql.d/conf.yaml` file, in the `conf.d/` folder at the root of your [
 To collect `extra_performance_metrics`, your MySQL server must have `performance_schema` enabled - otherwise set `extra_performance_metrics` to `false`. For more information on `performance_schema`, see [MySQL Performance Schema Quick Start][9].
 
 **Note**: The `datadog` user should be set up in the MySQL integration configuration as `host: 127.0.0.1` instead of `localhost`. Alternatively, you may also use `sock`.
-
-See the [sample mysql.yaml][8] for all available configuration options, including those for custom metrics.
 
 [Restart the Agent][10] to start sending MySQL metrics to Datadog.
 
@@ -244,7 +238,7 @@ Set [Autodiscovery Integration Templates][11] as Docker labels on your applicati
 ```yaml
 LABEL "com.datadoghq.ad.check_names"='["mysql"]'
 LABEL "com.datadoghq.ad.init_configs"='[{}]'
-LABEL "com.datadoghq.ad.instances"='[{"server": "%%host%%", "user": "datadog","password": "<UNIQUEPASSWORD>"}]'
+LABEL "com.datadoghq.ad.instances"='[{"server": "%%host%%", "username": "datadog","password": "<UNIQUEPASSWORD>"}]'
 ```
 
 See [Autodiscovery template variables][12] for details on using `<UNIQUEPASSWORD>` as an environment variable instead of a label.
@@ -285,7 +279,7 @@ metadata:
       [
         {
           "server": "%%host%%", 
-          "user": "datadog",
+          "username": "datadog",
           "password": "<UNIQUEPASSWORD>"
         }
       ]
@@ -310,7 +304,7 @@ metadata:
           "instances": [
             {
               "server": "%%host%%", 
-              "user": "datadog",
+              "username": "datadog",
               "password": "<UNIQUEPASSWORD>"
             }
           ]
@@ -364,7 +358,7 @@ Set [Autodiscovery Integrations Templates][11] as Docker labels on your applicat
     "dockerLabels": {
       "com.datadoghq.ad.check_names": "[\"mysql\"]",
       "com.datadoghq.ad.init_configs": "[{}]",
-      "com.datadoghq.ad.instances": "[{\"server\": \"%%host%%\", \"user\": \"datadog\",\"password\": \"<UNIQUEPASSWORD>\"}]"
+      "com.datadoghq.ad.instances": "[{\"server\": \"%%host%%\", \"username\": \"datadog\",\"password\": \"<UNIQUEPASSWORD>\"}]"
     }
   }]
 }
@@ -481,7 +475,7 @@ The check does not collect all metrics by default. Set the following boolean con
 | mysql.innodb.ibuf_merges                    | RATE        |
 | mysql.innodb.ibuf_segment_size              | GAUGE       |
 | mysql.innodb.ibuf_size                      | GAUGE       |
-| mysql.innodb.lock_structs                   | RATE        |
+| mysql.innodb.lock_structs                   | GAUGE       |
 | mysql.innodb.locked_tables                  | GAUGE       |
 | mysql.innodb.locked_transactions            | GAUGE       |
 | mysql.innodb.log_waits                      | RATE        |
@@ -573,10 +567,8 @@ Additional helpful documentation, links, and articles:
 
 - [Monitoring MySQL performance metrics][31]
 
-[1]: https://raw.githubusercontent.com/DataDog/integrations-core/master/mysql/images/mysql-dash-dd.png
-[2]: https://mariadb.org
-[3]: https://mariadb.com/kb/en/library/mariadb-vs-mysql-compatibility
-[4]: https://app.datadoghq.com/account/settings#agent
+[1]: https://raw.githubusercontent.com/DataDog/integrations-core/master/mysql/images/mysql-dash-dd-2.png
+[4]: https://app.datadoghq.com/account/settings/agent/latest
 [5]: https://dev.mysql.com/doc/refman/8.0/en/creating-accounts.html
 [6]: https://docs.datadoghq.com/integrations/faq/mysql-localhost-error-localhost-vs-127-0-0-1/
 [7]: https://docs.datadoghq.com/agent/guide/agent-configuration-files/#agent-configuration-directory

@@ -2,8 +2,11 @@
 # All rights reserved
 # Licensed under a 3-clause BSD style license (see LICENSE)
 import re
+from collections import defaultdict
 
-from datadog_checks.base.utils.serialization import json
+from six import iteritems
+
+from datadog_checks.base.utils.serialization import from_json, to_json
 
 
 class DatadogAgentStub(object):
@@ -17,20 +20,30 @@ class DatadogAgentStub(object):
     """
 
     def __init__(self):
+        self._sent_logs = defaultdict(list)
         self._metadata = {}
         self._cache = {}
         self._config = self.get_default_config()
         self._hostname = 'stubbed.hostname'
         self._process_start_time = 0
+        self._external_tags = []
 
     def get_default_config(self):
         return {'enable_metadata_collection': True, 'disable_unsafe_yaml': True}
 
     def reset(self):
+        self._sent_logs.clear()
         self._metadata.clear()
         self._cache.clear()
         self._config = self.get_default_config()
         self._process_start_time = 0
+        self._external_tags = []
+
+    def assert_logs(self, check_id, logs):
+        sent_logs = self._sent_logs[check_id]
+        assert sent_logs == logs, 'Expected {} logs for check {}, found {}. Submitted logs: {}'.format(
+            len(logs), check_id, len(self._sent_logs[check_id]), repr(self._sent_logs)
+        )
 
     def assert_metadata(self, check_id, data):
         actual = {}
@@ -44,6 +57,28 @@ class DatadogAgentStub(object):
         metadata_items = len(self._metadata)
         assert metadata_items == count, 'Expected {} metadata items, found {}. Submitted metadata: {}'.format(
             count, metadata_items, repr(self._metadata)
+        )
+
+    def assert_external_tags(self, hostname, external_tags, match_tags_order=False):
+        for h, tags in self._external_tags:
+            if h == hostname:
+                if not match_tags_order:
+                    external_tags = {k: sorted(v) for (k, v) in iteritems(external_tags)}
+                    tags = {k: sorted(v) for (k, v) in iteritems(tags)}
+
+                assert (
+                    external_tags == tags
+                ), 'Expected {} external tags for hostname {}, found {}. Submitted external tags: {}'.format(
+                    external_tags, hostname, tags, repr(self._external_tags)
+                )
+                return
+
+        raise AssertionError('Hostname {} not found in external tags {}'.format(hostname, repr(self._external_tags)))
+
+    def assert_external_tags_count(self, count):
+        tags_count = len(self._external_tags)
+        assert tags_count == count, 'Expected {} external tags items, found {}. Submitted external tags: {}'.format(
+            count, tags_count, repr(self._external_tags)
         )
 
     def get_hostname(self):
@@ -67,8 +102,11 @@ class DatadogAgentStub(object):
     def set_check_metadata(self, check_id, name, value):
         self._metadata[(check_id, name)] = value
 
-    def set_external_tags(self, *args, **kwargs):
-        pass
+    def send_log(self, log_line, check_id):
+        self._sent_logs[check_id].append(from_json(log_line))
+
+    def set_external_tags(self, external_tags):
+        self._external_tags = external_tags
 
     def tracemalloc_enabled(self, *args, **kwargs):
         return False
@@ -84,8 +122,8 @@ class DatadogAgentStub(object):
         if options:
             # Options provided is a JSON string because the Go stub requires it, whereas
             # the python stub does not for things such as testing.
-            if json.loads(options).get('return_json_metadata', False):
-                return json.dumps({'query': re.sub(r'\s+', ' ', query or '').strip(), 'metadata': {}})
+            if from_json(options).get('return_json_metadata', False):
+                return to_json({'query': re.sub(r'\s+', ' ', query or '').strip(), 'metadata': {}})
         return re.sub(r'\s+', ' ', query or '').strip()
 
     def obfuscate_sql_exec_plan(self, plan, normalize=False):
@@ -97,6 +135,10 @@ class DatadogAgentStub(object):
 
     def set_process_start_time(self, time):
         self._process_start_time = time
+
+    def obfuscate_mongodb_string(self, command):
+        # Passthrough stub: obfuscation implementation is in Go code.
+        return command
 
 
 # Use the stub as a singleton

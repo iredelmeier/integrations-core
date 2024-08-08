@@ -13,12 +13,19 @@
     "media": [],
     "classifier_tags": [
       "Category::Caching",
-      "Category::Data Store",
+      "Category::Data Stores",
       "Category::Log Collection",
       "Category::Tracing",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/how-to-monitor-redis-performance-metrics"
+      }
     ]
   },
   "author": {
@@ -27,7 +34,6 @@
     "homepage": "https://www.datadoghq.com",
     "sales_email": "info@datadoghq.com"
   },
-  "oauth": {},
   "assets": {
     "integration": {
       "source_type_name": "Redis",
@@ -47,7 +53,9 @@
       },
       "process_signatures": [
         "redis-server"
-      ]
+      ],
+      "source_type_id": 21,
+      "auto_install": true
     },
     "dashboards": {
       "redis": "assets/dashboards/overview.json"
@@ -60,9 +68,6 @@
       "pid_overview": "assets/saved_views/pid_overview.json",
       "redis_pattern": "assets/saved_views/redis_pattern.json",
       "redis_processes": "assets/saved_views/redis_processes.json"
-    },
-    "logs": {
-      "source": "redis"
     }
   }
 }

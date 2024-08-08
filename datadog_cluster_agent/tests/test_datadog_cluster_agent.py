@@ -14,10 +14,13 @@ NAMESPACE = 'datadog.cluster_agent'
 
 METRICS = [
     'admission_webhooks.certificate_expiry',
+    'admission_webhooks.cws_exec_instrumentation_attempts.count',
+    'admission_webhooks.cws_exec_instrumentation_attempts.sum',
+    'admission_webhooks.cws_pod_instrumentation_attempts.count',
+    'admission_webhooks.cws_pod_instrumentation_attempts.sum',
     'admission_webhooks.library_injection_attempts',
     'admission_webhooks.library_injection_errors',
     'admission_webhooks.mutation_attempts',
-    'admission_webhooks.mutation_errors',
     'admission_webhooks.patcher.attempts',
     'admission_webhooks.patcher.completed',
     'admission_webhooks.patcher.errors',
@@ -48,6 +51,7 @@ METRICS = [
     'datadog.rate_limit_queries.limit',
     'datadog.rate_limit_queries.period',
     'datadog.rate_limit_queries.remaining',
+    'datadog.rate_limit_queries.remaining_min',
     'datadog.rate_limit_queries.reset',
     'datadog.requests',
     'endpoint_checks.configs_dispatched',
@@ -63,7 +67,15 @@ METRICS = [
     'go.threads',
     'kubernetes_apiserver.emitted_events',
     'kubernetes_apiserver.kube_events',
+    'language_detection_dca_handler.processed_requests',
+    'language_detection_patcher.patches',
     'secret_backend.elapsed',
+    'tagger.stored_entities',
+    'tagger.updated_entities',
+    'workloadmeta.events_received',
+    'workloadmeta.notifications_sent',
+    'workloadmeta.stored_entities',
+    'workloadmeta.subscribers',
 ]
 
 

@@ -55,7 +55,7 @@ setup(
         'Natural Language :: English',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: Implementation :: CPython',
         'Programming Language :: Python :: Implementation :: PyPy',
     ],
@@ -67,7 +67,6 @@ setup(
     extras_require={'cli': parse_pyproject_array('cli')},
     entry_points={
         'pytest11': ['datadog_checks = datadog_checks.dev.plugin.pytest'],
-        'tox': ['datadog_checks = datadog_checks.dev.plugin.tox'],
         'console_scripts': ['ddev = datadog_checks.dev.tooling.cli:ddev'],
     },
 )

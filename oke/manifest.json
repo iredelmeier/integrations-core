@@ -18,7 +18,14 @@
       "Category::Orchestration",
       "Supported OS::Linux",
       "Supported OS::Windows",
-      "Supported OS::macOS"
+      "Supported OS::macOS",
+      "Offering::Integration"
+    ],
+    "resources": [
+      {
+        "resource_type": "blog",
+        "url": "https://www.datadoghq.com/blog/monitor-oracle-kubernetes-engine/"
+      }
     ]
   },
   "author": {
@@ -27,7 +34,6 @@
     "homepage": "https://www.datadoghq.com",
     "sales_email": "info@datadoghq.com"
   },
-  "oauth": {},
   "assets": {
     "integration": {
       "source_type_name": "Oracle Container Engine for Kubernetes - OKE",
@@ -37,7 +43,9 @@
       },
       "service_checks": {
         "metadata_path": "assets/service_checks.json"
-      }
+      },
+      "source_type_id": 10255,
+      "auto_install": true
     }
   }
 }
